@@ -1,118 +1,82 @@
-<!DOCTYPE html>
-<html lang="no">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Musikkontroll</title>
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+// js/app.js
 
-  <!-- Ekstern CSS -->
-  <link rel="stylesheet" href="css/app.css" />
+// After the function show(page) { ... }
+window.show = show;
 
-  <!-- Libs må lastes FØR app-koden -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-</head>
-<body>
-  <header aria-live="polite">🎵 Musikkontroll</header>
+// After the function async function searchBrreg(){ ... }
+window.searchBrreg = searchBrreg;
 
-  <!-- LOGIN -->
-  <main id="login" class="page active center" role="main" aria-labelledby="login-title">
-    <h1 id="login-title">Logg inn</h1>
-    <div class="card">
-      <label for="email">E-post</label>
-      <input id="email" type="email" autocomplete="username" />
-      <label for="password">Passord</label>
-      <input id="password" type="password" autocomplete="current-password" />
-      <div class="row">
-        <button id="loginBtn">Logg inn</button>
-        <button class="btn-green" id="signupBtn">Opprett bruker</button>
-      </div>
-      <div class="row">
-        <button class="btn-gray" id="magicBtn">Send magisk lenke</button>
-      </div>
-      <p class="help">Tips: For lokal testing kan du slå av «Confirm email» i Supabase (Auth → Providers → Email).</p>
-      <div id="auth-error" class="log" style="background:#fef2f2;color:#991b1b;display:none"></div>
-    </div>
-  </main>
+// Add the new functions near the list-related functions, e.g. before async function renderDashboard(){ ... }
 
-  <!-- SKJEMA -->
-  <div id="kontroll" class="page" aria-labelledby="kontroll-title">
-    <h2 id="kontroll-title" class="visually-hidden">Kontrollskjema</h2>
+async function openFromList(listId, index){
+  try{
+    const { data:list, error } = await supabase.from('lists').select('*').eq('id', listId).single();
+    if(error){ console.error(error); toast('Kunne ikke åpne liste'); return }
+    const it = list.items[index];
+    if(!it){ return }
+    document.getElementById('orgnr').value = it.Orgnummer || '';
+    document.getElementById('navn').value = it.Navn || '';
+    document.getElementById('besoksadresse').value = it.Gateadresse || '';
+    document.getElementById('besoks_postnr').value = it.Postnr || '';
+    document.getElementById('besoks_poststed').value = it.Poststed || '';
+    show('kontroll');
+    const n = String(it.Orgnummer || '').replace(/\D/g,'');
+    if(n.length===9){
+      try{
+        const r = await fetch('https://data.brreg.no/enhetsregisteret/api/enheter/'+n);
+        if(r.ok){
+          const d = await r.json();
+          const a = d.forretningsadresse || d.beliggenhetsadresse || {};
+          document.getElementById('besoks_postnr').value = a.postnummer || '';
+          document.getElementById('besoks_poststed').value = a.poststed || '';
+          document.getElementById('firma').value = d.navn || '';
+        }
+      }catch(e){ console.error(e) }
+    }
+  }catch(e){ console.error(e) }
+}
+window.openFromList = openFromList;
 
-    <div class="card" aria-describedby="brreg-hjelp">
-      <label for="orgnr">Org.nr</label>
-      <div class="row">
-        <input id="orgnr" inputmode="numeric" pattern="\d{9}" maxlength="9" placeholder="9 siffer" aria-describedby="brreg-hjelp" />
-        <button class="icon-btn" id="brregBtn" title="Søk i Enhetsregisteret">🔎</button>
-      </div>
-      <div id="brreg-hjelp" class="help">Søk henter navn og postadresse fra Brreg.</div>
-      <div class="row">
-        <button class="btn-gray" id="resetBtn">🗑 Nullstill skjema</button>
-        <button class="btn-gray" id="logoutBtn">Logg ut</button>
-      </div>
-      <div class="log" id="brreg-log" aria-live="polite"></div>
-    </div>
+async function deleteList(listId){
+  if(!confirm('Slette hele listen?')) return;
+  try{
+    const { error } = await supabase.from('lists').delete().eq('id', listId);
+    if(error){ console.error(error); toast('Kunne ikke slette liste'); return }
+    toast('Liste slettet');
+    await renderDashboard();
+  }catch(e){ console.error(e); toast('Kunne ikke slette liste'); }
+}
+window.deleteList = deleteList;
 
-    <div class="card"><label for="navn">Besøksnavn</label><input id="navn" autocomplete="organization" /></div>
-    <div class="card"><label for="besoksadresse">Besøksadresse</label><input id="besoksadresse" autocomplete="address-line1" /></div>
-    <div class="card">
-      <label>Besøks-post</label>
-      <div class="row"><input id="besoks_postnr" inputmode="numeric" maxlength="4" placeholder="Postnr"><input id="besoks_poststed" placeholder="Poststed"></div>
-    </div>
-    <div class="card"><label for="firma">Firmanavn</label><input id="firma" /></div>
+// In the renderDashboard function, replace box.innerHTML= block header as specified:
 
-    <div class="card">
-      <strong>Tarifflinjer</strong>
-      <div id="tariff-rows"></div>
-      <button class="btn-green" id="addRowBtn">+ Ny linje</button>
-      <label for="hoyttalere">Plassering av høyttalere</label><input id="hoyttalere">
-      <label for="kommentar">Kommentar</label><textarea id="kommentar" rows="2"></textarea>
-      <div class="row">
-        <button id="saveDraftBtn">Lagre</button>
-        <button class="btn-amber" id="printBtn">Print</button>
-        <button class="btn-green" id="sendBtn">Send PDF</button>
-      </div>
+// Find this existing code block:
+box.innerHTML=`
+  <div class="list-header">
+    <span style="cursor:default">${sanitize(L.name)}</span>
+    <small>${new Date(L.created_at).toLocaleDateString('nb-NO')}</small>
+  </div>
+  <div class="list-scroll">
+    <table class="list-table">
+      ...
+
+// Replace with:
+box.innerHTML=`
+  <div class="list-header">
+    <span style="cursor:default">${sanitize(L.name)}</span>
+    <div style="display:flex;align-items:center;gap:8px">
+      <small>${new Date(L.created_at).toLocaleDateString('nb-NO')}</small>
+      <button class="btn-tiny" title="Slett hele listen" onclick="deleteList('${L.id}')">Slett liste</button>
     </div>
   </div>
+  <div class="list-scroll">
+    <table class="list-table">
+      ...
 
-  <!-- LISTER -->
-  <div id="lister" class="page" aria-labelledby="lister-title">
-    <h2 id="lister-title" class="visually-hidden">Lister</h2>
-    <div class="card">
-      <div class="row" style="align-items:flex-end">
-        <div style="flex:2">
-          <label for="excelFile">Importer Excel</label>
-          <input type="file" id="excelFile" accept=".xlsx" />
-          <div class="help">Kolonner: Kommentar | Orgnummer | Navn | Gateadresse | Postnr | Poststed</div>
-        </div>
-        <div style="flex:1">
-          <label for="search">Søk</label>
-          <input id="search" placeholder="Filtrer aktive lister" />
-        </div>
-      </div>
-    </div>
+// Also inside renderDashboard, replace the <td> with the long inline onclick IIFE button with:
 
-    <div id="lists-dashboard"></div>
-  </div>
+<td>
+  <button class="btn-tiny" title="Åpne i skjema" onclick="openFromList('${L.id}', ${i})">${sanitize(it.Navn||'Åpne')}</button>
+</td>
 
-  <!-- KONTROLLERT -->
-  <div id="kontrollert" class="page" aria-labelledby="kontrollert-title">
-    <h2 id="kontrollert-title" class="visually-hidden">Kontrollert</h2>
-    <div id="archive"></div>
-  </div>
-
-  <nav aria-label="Hovednavigasjon">
-    <button data-page="kontroll" class="active">Skjema</button>
-    <button data-page="lister">Lister</button>
-    <button data-page="kontrollert">Kontrollert</button>
-  </nav>
-
-  <div id="toast" role="status" aria-live="polite"></div>
-
-  <!-- Din egen app-kode -->
-  <script src="js/app.js"></script>
-</body>
-</html>
+// Remove the previous long inline JavaScript in that cell.
