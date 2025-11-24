@@ -165,8 +165,8 @@
 
   <script>
     // ===== helpers
-    const $$  = (s) => document.querySelector(s)
-    const $$$ = (s) => Array.from(document.querySelectorAll(s))
+    const $$ = s => document.querySelector(s)
+    const $$$ = s => Array.from(document.querySelectorAll(s))
     const toast = (m)=>{ const t=$$('#toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600) }
     const sanitize = (str='') => String(str).replace(/[<>]/g, c => ({'<':'&lt;','>':'&gt;'}[c]))
 
@@ -320,6 +320,24 @@
       return data
     }
 
+    // ===== Slett kontroll (NY)
+    async function deleteControl(controlId){
+      if(!confirm('Slette denne kontrollen?')) return;
+      try{
+        const { error } = await supabase.from('controls').delete().eq('id', controlId);
+        if(error){
+          console.error(error);
+          toast('Kunne ikke slette kontroll');
+          return;
+        }
+        toast('Kontroll slettet');
+        await renderArchive();
+      }catch(e){
+        console.error(e);
+        toast('Kunne ikke slette kontroll');
+      }
+    }
+
     async function saveList(name, items){
       const user = await currentUser(); if(!user){ toast('Innlogging kreves'); return }
       const { error } = await supabase.from('lists').insert({ user_id:user.id, name, items })
@@ -420,10 +438,7 @@
         box.innerHTML=`
           <div class="list-header">
             <span style="cursor:default">${sanitize(L.name)}</span>
-            <div style="display:flex;align-items:center;gap:8px">
-              <small>${new Date(L.created_at).toLocaleDateString('nb-NO')}</small>
-              <button class="btn-tiny" title="Slett hele listen" onclick="(async()=>{ if(!confirm('Slette hele listen?')) return; try{ const { error } = await supabase.from('lists').delete().eq('id','${L.id}'); if(error){ console.error(error); toast('Kunne ikke slette liste'); return } toast('Liste slettet'); await renderDashboard(); }catch(e){ console.error(e); toast('Kunne ikke slette liste'); } })()">Slett liste</button>
-            </div>
+            <small>${new Date(L.created_at).toLocaleDateString('nb-NO')}</small>
           </div>
           <div class="list-scroll">
             <table class="list-table">
@@ -497,12 +512,17 @@
         byMonth[month].forEach(c=>{
           const data=c.data||{}
           const li=document.createElement('div'); li.className='archive-item'
-          li.innerHTML=`<b>${sanitize(data.navn||'')}</b> – ${new Date(c.created_at).toLocaleDateString('nb-NO')}<br>
+          li.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+              <span><b>${sanitize(data.navn||'')}</b> – ${new Date(c.created_at).toLocaleDateString('nb-NO')}</span>
+              <button class="btn-tiny" title="Slett kontroll" onclick="deleteControl('${c.id}')">Slett</button>
+            </div>
             ${(data.tariff||[]).map(t=>{
-              const sit = (t.venue==='Serveringssted' && t.seter)?` • ${sanitize(t.seter)} seter`:''
-              const mus = t.music==='Bakgrunn'?'Bakgrunnsmusikk':'Fremtredende musikk'
-              return `${sanitize(t.venue)} • ${mus} • ${sanitize(t.kvm)} kvm${sit} • ${sanitize(t.dager)} dager`
-            }).join('<br>')}`
+              const sit = (t.venue==='Serveringssted' && t.seter)?` • ${sanitize(t.seter)} seter`:'';
+              const mus = t.music==='Bakgrunn'?'Bakgrunnsmusikk':'Fremtredende musikk';
+              return `${sanitize(t.venue)} • ${mus} • ${sanitize(t.kvm)} kvm${sit} • ${sanitize(t.dager)} dager`;
+            }).join('<br>')}
+          `;
           div.appendChild(li)
         })
       })
