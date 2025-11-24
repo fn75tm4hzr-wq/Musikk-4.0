@@ -349,6 +349,27 @@
       return data
     }
 
+    async function deleteList(listId){
+      if(!confirm('Slette hele listen?')) return;
+      try{
+        const { error } = await supabase
+          .from('lists')
+          .delete()
+          .eq('id', listId);
+
+        if(error){
+          console.error(error);
+          toast('Kunne ikke slette liste');
+          return;
+        }
+        toast('Liste slettet');
+        await renderDashboard();
+      }catch(e){
+        console.error(e);
+        toast('Kunne ikke slette liste');
+      }
+    }
+
     // ===== PDF & Print
     function buildPdf(doc, data){
       let y=8
@@ -440,7 +461,10 @@
         box.innerHTML = `
           <div class="list-header">
             <span style="cursor:default">${sanitize(L.name)}</span>
-            <small>${new Date(L.created_at).toLocaleDateString('nb-NO')}</small>
+            <div style="display:flex;gap:8px;align-items:center">
+              <small>${new Date(L.created_at).toLocaleDateString('nb-NO')}</small>
+              <button class="btn-tiny" type="button" data-role="delete-list">Slett liste</button>
+            </div>
           </div>
           <div class="list-scroll">
             <table class="list-table">
@@ -458,6 +482,9 @@
             </table>
           </div>`
         container.appendChild(box)
+
+        const deleteBtn = box.querySelector('button[data-role="delete-list"]')
+        if(deleteBtn) deleteBtn.addEventListener('click', ()=>deleteList(L.id))
 
         const tbody = box.querySelector('tbody')
 
